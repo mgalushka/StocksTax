@@ -51,6 +51,14 @@ class AggregateDayTxs:
         self.disposeAmt += amt
         self.disposeVal += val
 
+    def __repr__(self):
+        return 'acquireAmt={}, acquireVal={}; disposeAmt={}, disposeVal={}'.format(
+            self.acquireAmt,
+            self.acquireVal,
+            self.disposeAmt,
+            self.disposeVal,
+        )
+
 class Gain:
 
     def __init__(self, cost: Decimal = Decimal(0), value: Decimal = Decimal(0)):
@@ -257,7 +265,7 @@ class CapitalGainCalculator:
                 if tx.disposeAmt != 0:
 
                     if asset not in self._assetPools:
-                        raise ValueError("Disposing of an asset not acquired")
+                        raise ValueError("Disposing of an asset ({}) not acquired: {}".format(asset, tx))
 
                     average_price = 0
 
