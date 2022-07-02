@@ -75,7 +75,8 @@ class CSVDateMap(datemap.DateMap):
 
         if requireDir:
             for f in os.listdir(path):
-                self._processFile(path + "/" + f)
+                if f.endswith('.csv'):
+                    self._processFile(path + "/" + f)
         else:
             self._processFile(path)
 
