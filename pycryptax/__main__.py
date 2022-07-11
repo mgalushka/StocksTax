@@ -1,6 +1,6 @@
 # Copyright 2019 Matthew Mitchell
 
-import argparse, sys
+import argparse, sys, logging
 from contextlib import contextmanager
 from pycryptax import csvdata, prices, gains, util
 
@@ -107,6 +107,8 @@ information to CSV.
     start = util.dateFromString(args.start)
     end = util.dateFromString(args.end)
 
+    logging.warning('Generating report from: {} to {}'.format(start, end))
+
     # Load price data
     with csvErrorHandler("prices", rootDir + PRICES_DIR, reportAsset):
         priceData = prices.Prices(reportAsset, rootDir + PRICES_DIR)
@@ -126,4 +128,6 @@ information to CSV.
         print(summary)
 
 if __name__ == '__main__':
+    logger = logging.getLogger()
+    logger.setLevel(logging.WARNING)
     main()

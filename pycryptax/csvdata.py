@@ -1,4 +1,5 @@
 import csv, bisect, os
+import logging
 from decimal import Decimal, InvalidOperation
 from pycryptax import util, datemap
 
@@ -29,6 +30,8 @@ def isEmpty(v):
 class CSVDateMap(datemap.DateMap):
 
     def _processFile(self, filename):
+
+        logging.warning('Processing file: {}'.format(filename))
 
         try:
             f = open(filename, newline='')

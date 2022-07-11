@@ -1,4 +1,5 @@
 import copy, datetime
+import logging
 from decimal import Decimal
 from enum import Enum
 
@@ -79,6 +80,9 @@ class Gain:
     def gain(self):
         return self._value - self._cost
 
+    def __str__(self):
+        return '[Value={},Cost={},Gain={}]'.format(self.value(), self.cost(), self.gain())
+
 class Rule(Enum):
     SAME_DAY = "SAME DAY"
     BED_AND_BREAKFASTING = "BED AND BREAKFASTING"
@@ -142,6 +146,8 @@ class CapitalGainCalculator:
                 )
 
         def applyGain(asset, gain, date):
+
+            logging.debug('Applying gain={} to asset={}, for date={}'.format(gain, asset, date))
 
             if date < start or date > end:
                 return False
