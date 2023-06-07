@@ -109,10 +109,6 @@ information to CSV.
 
     logging.warning('Generating report from: {} to {}'.format(start, end))
 
-    # Load price data
-    with csvErrorHandler("prices", rootDir + PRICES_DIR, reportAsset):
-        priceData = prices.Prices(reportAsset, rootDir + PRICES_DIR)
-
     def getCGCalc(**kwargs):
         with csvErrorHandler(
             "capital gains information", rootDir + GAINS_DIR, reportAsset

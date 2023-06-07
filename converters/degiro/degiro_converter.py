@@ -1,5 +1,4 @@
 import argparse
-import logging
 
 from File import File
 from degiro.DegiroConverter import DegiroConverter
@@ -7,7 +6,7 @@ from degiro.DegiroConverter import DegiroConverter
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(
         prog='Degiro transactions converter',
-        description='Converts SVC degiro transactions file into pycryptax format',
+        description='Converts CSV degiro transactions file into pycryptax format',
         epilog='',
     )
 

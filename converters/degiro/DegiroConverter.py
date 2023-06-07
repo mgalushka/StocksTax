@@ -1,4 +1,5 @@
 import logging
+from io import StringIO
 from datetime import datetime
 from decimal import Decimal
 from typing import List, Dict
@@ -27,6 +28,11 @@ class DegiroConverter(Converter):
 
     FEE_COLUMN_KEY = 'Transaction and/or third'
     FEE_CURRENCY_COLUMN_KEY = 'Transaction and/or third currency'
+
+    def __init__(self, file: StringIO):
+        Converter.__init__(self, file)
+        self.data: List[Dict[str, str]] = []
+        self.__parse_csv()
 
     def convert(self) -> List[TaxRecord]:
         if len(self.data) == 0:
@@ -78,3 +84,25 @@ class DegiroConverter(Converter):
             abs(Decimal(data[DegiroConverter.FEE_COLUMN_KEY])),
             data[DegiroConverter.FEE_CURRENCY_COLUMN_KEY],
         )
+
+    def __parse_csv(self):
+        if len(self.rawdata) >= 1:
+            self.header = self.rawdata[0]
+
+        if len(self.rawdata) == 1:
+            return
+
+        for row_number in range(1, len(self.rawdata)):
+            object: Dict[str, str] = {}
+            counter = 0
+            previous_key = None
+            for key in self.header:
+                if not key:
+                    if not previous_key:
+                        raise Exception('Previous key cannot be None, parser failed')
+
+                    key = previous_key + ' currency'
+                object[key] = self.rawdata[row_number][counter]
+                previous_key = key
+                counter += 1
+            self.data.append(object)
