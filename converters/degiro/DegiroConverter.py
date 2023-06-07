@@ -4,6 +4,8 @@ from datetime import datetime
 from decimal import Decimal
 from typing import List, Dict
 
+from DetailedTaxRecord import DetailedTaxRecord
+from EquityAction import EquityAction
 from Money import Money
 from TaxRecord import TaxRecord
 from converters.Converter import Converter
@@ -29,8 +31,8 @@ class DegiroConverter(Converter):
     FEE_COLUMN_KEY = 'Transaction and/or third'
     FEE_CURRENCY_COLUMN_KEY = 'Transaction and/or third currency'
 
-    def __init__(self, file: StringIO):
-        Converter.__init__(self, file)
+    def __init__(self, file: StringIO, log: StringIO):
+        Converter.__init__(self, file, log)
         self.data: List[Dict[str, str]] = []
         self.__parse_csv()
 
@@ -44,9 +46,28 @@ class DegiroConverter(Converter):
                 date = self.__get_date(record)
                 asset = self.__get_asset(record)
                 quantity = self.__get_quantity(record)
-                price = CurrencyConverter(self.__get_price(record)).convert_to_gbp(date).amount
-                fee = CurrencyConverter(self.__get_fee(record)).convert_to_gbp(date).amount
+
+                raw_price: Money = self.__get_price(record)
+                price = CurrencyConverter(raw_price).convert_to_gbp(date).amount
+
+                raw_fee: Money = self.__get_fee(record)
+                fee = CurrencyConverter(raw_fee).convert_to_gbp(date).amount
+
                 tax_report.append(TaxRecord(date, asset, quantity, price, fee))
+
+                operation = EquityAction.BUY if quantity >= 0 else EquityAction.SELL
+                self.log.write(str(DetailedTaxRecord(
+                    date,
+                    asset,
+                    quantity,
+                    operation,
+                    raw_price,
+                    CurrencyConverter(raw_price).get_rate_to_gbp(date),
+                    price,
+                    raw_fee,
+                    CurrencyConverter(raw_fee).get_rate_to_gbp(date),
+                    fee,
+                )))
             except NoISINError:
                 logging.warning("Ignoring record as no ISIN found: {}".format(record))
 

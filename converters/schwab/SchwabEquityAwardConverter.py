@@ -5,6 +5,8 @@ from io import StringIO
 from typing import List, Dict
 
 from Converter import Converter
+from DetailedTaxRecord import DetailedTaxRecord
+from EquityAction import EquityAction
 from IndexRenaming import IndexRenaming
 from Money import Money
 from TaxRecord import TaxRecord
@@ -20,8 +22,8 @@ class SchwabEquityAwardConverter(Converter):
     QUANTITY_COLUMN_KEY = 'Net Shares Deposited'
     PRICE_COLUMN_KEY = 'Fair Market Value'
 
-    def __init__(self, file: StringIO):
-        Converter.__init__(self, file)
+    def __init__(self, file: StringIO, log: StringIO):
+        Converter.__init__(self, file, log)
         self.data: List[Dict[str, str]] = []
         self.__parse_csv()
 
@@ -34,8 +36,26 @@ class SchwabEquityAwardConverter(Converter):
             date = self.__get_date(record)
             asset = self.__get_asset(record)
             quantity = self.__get_quantity(record)
-            price = CurrencyConverter(self.__get_price(record)).convert_to_gbp(date).amount
-            tax_report.append(TaxRecord(date, asset, quantity, price, Decimal(0)))
+
+            raw_price: Money = self.__get_price(record)
+            price = CurrencyConverter(raw_price).convert_to_gbp(date).amount
+
+            fee: Money = Money.zero()
+            tax_report.append(TaxRecord(date, asset, quantity, price, fee.amount))
+
+            operation = EquityAction.BUY if quantity >= 0 else EquityAction.SELL
+            self.log.write(str(DetailedTaxRecord(
+                date,
+                asset,
+                quantity,
+                operation,
+                raw_price,
+                CurrencyConverter(raw_price).get_rate_to_gbp(date),
+                price,
+                fee,
+                CurrencyConverter(fee).get_rate_to_gbp(date),
+                fee.amount,
+            )))
 
         return tax_report
 

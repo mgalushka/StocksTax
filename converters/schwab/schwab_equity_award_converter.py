@@ -1,7 +1,10 @@
 import argparse
 import logging
+from io import StringIO
 
+from DetailedTaxRecord import DetailedTaxRecord
 from File import File
+from TaxRecord import TaxRecord
 from schwab.SchwabEquityAwardConverter import SchwabEquityAwardConverter
 
 '''
@@ -21,13 +24,15 @@ if __name__ == '__main__':
 
     args = parser.parse_args()
 
-    converter = SchwabEquityAwardConverter(File(args.filepath).get_io())
+    log_io = StringIO()
+    converter = SchwabEquityAwardConverter(File(args.filepath).get_io(), log_io)
     report = converter.convert()
 
-    for r in report:
-        logging.warning(r)
+    with open('./examples/logs/real-schwab-equity-2022-23.log.csv', 'w') as log:
+        log.write(DetailedTaxRecord.header())
+        log.write(log_io.getvalue())
 
     with open('./examples/gains/real-schwab-equity-2022-23.csv', 'w') as output:
-        output.write('DATE,ASSET,AMOUNT,PRICE,FEE\n')
+        output.write(TaxRecord.header())
         for record in report:
             output.write(str(record) + '\n')

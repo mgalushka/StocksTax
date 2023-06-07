@@ -1,11 +1,12 @@
 import csv
 from io import StringIO
-from typing import List, Dict
+from typing import List
 
 
 class Converter:
-    def __init__(self, file: StringIO):
+    def __init__(self, file: StringIO, log: StringIO):
         self.file = file
+        self.log = log
         self.rawdata: List[str] = []
         self.__parse()
 

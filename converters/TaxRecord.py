@@ -12,6 +12,10 @@ class TaxRecord:
 
     TAX_RECORD_DATE_FORMAT = '%Y-%m-%d'
 
+    @staticmethod
+    def header():
+        return 'DATE,ASSET,AMOUNT,PRICE,FEE\n'
+
     def __str__(self):
         return '{date},{asset},{amount:.0f},{price:.2f},{fee:.2f}'.format(
             date=self.date.strftime(TaxRecord.TAX_RECORD_DATE_FORMAT),

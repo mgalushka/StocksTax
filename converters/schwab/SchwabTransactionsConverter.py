@@ -5,6 +5,7 @@ from io import StringIO
 from typing import List, Dict, Optional
 
 from Converter import Converter
+from DetailedTaxRecord import DetailedTaxRecord
 from EquityAction import EquityAction
 from IndexRenaming import IndexRenaming
 from Money import Money
@@ -25,8 +26,8 @@ class SchwabTransactionsConverter(Converter):
     PRICE_COLUMN_KEY = 'Price'
     FEES_COLUMN_KEY = 'Fees & Comm'
 
-    def __init__(self, file: StringIO):
-        Converter.__init__(self, file)
+    def __init__(self, file: StringIO, log: StringIO):
+        Converter.__init__(self, file, log)
         self.data: List[Dict[str, str]] = []
         self.__parse_csv()
 
@@ -42,11 +43,28 @@ class SchwabTransactionsConverter(Converter):
                 index = self.__get_index(record)
                 asset = self.__get_asset(record)
                 quantity = self.__get_quantity(record, action)
-                price = CurrencyConverter(self.__get_price(record)).convert_to_gbp(date).amount
-                fees = CurrencyConverter(self.__get_fee(record)).convert_to_gbp(date).amount
+
+                raw_price: Money = self.__get_price(record)
+                price = CurrencyConverter(raw_price).convert_to_gbp(date).amount
+
+                raw_fees: Money = self.__get_fee(record)
+                fees = CurrencyConverter(raw_fees).convert_to_gbp(date).amount
 
                 split = StockSplit(index, quantity, price, date)
                 tax_report.append(TaxRecord(date, asset, split.quantity(), split.price(), fees))
+
+                self.log.write(str(DetailedTaxRecord(
+                    date,
+                    asset,
+                    quantity,
+                    action,
+                    raw_price,
+                    CurrencyConverter(raw_price).get_rate_to_gbp(date),
+                    price,
+                    raw_fees,
+                    CurrencyConverter(raw_fees).get_rate_to_gbp(date),
+                    fees,
+                )))
 
         logging.warning(tax_report)
 
