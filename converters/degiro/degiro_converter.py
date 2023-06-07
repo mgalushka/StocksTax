@@ -17,7 +17,7 @@ if __name__ == '__main__':
     converter = DegiroConverter(File(args.filepath).get_io())
     report = converter.convert()
 
-    with open('./examples/gains/real-2021-22.csv', 'w') as output:
+    with open('./examples/gains/real-2022-23.csv', 'w') as output:
         output.write('DATE,ASSET,AMOUNT,PRICE,FEE\n')
         for record in report:
             output.write(str(record) + '\n')

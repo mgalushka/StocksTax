@@ -43,8 +43,10 @@ class SchwabTransactionsConverter(Converter):
                 asset = self.__get_asset(record)
                 quantity = self.__get_quantity(record, action)
                 price = CurrencyConverter(self.__get_price(record)).convert_to_gbp(date).amount
+                fees = CurrencyConverter(self.__get_fee(record)).convert_to_gbp(date).amount
+
                 split = StockSplit(index, quantity, price, date)
-                tax_report.append(TaxRecord(date, asset, split.quantity(), split.price(), Decimal(0)))
+                tax_report.append(TaxRecord(date, asset, split.quantity(), split.price(), fees))
 
         logging.warning(tax_report)
 
@@ -88,7 +90,10 @@ class SchwabTransactionsConverter(Converter):
     def __get_fee(self, data: Dict[str, str]) -> Money:
         value = data[SchwabTransactionsConverter.FEES_COLUMN_KEY]
         value = value.replace('$', '')
-        return Money(abs(Decimal(value)), 'USD')
+        if value:
+            return Money(abs(Decimal(value)), 'USD')
+        else:
+            return Money(Decimal(0), 'USD')
 
     def __parse_csv(self):
         if len(self.rawdata) <= 2:
