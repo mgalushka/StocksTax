@@ -208,8 +208,8 @@ class CapitalGainCalculator:
             if reportable:
                 self.total_number_of_disposals += 1
                 profit = value - cost
-                print("{id}. SELL: {amount} {asset} on {dt} at £{disposePrice:.04f} (including fees) "
-                      "gives {gain_or_loss} of £{profit:.02f}".format(
+                print("{id}. SELL: {amount} {asset} on {dt} at £{disposePrice:.4f} (including fees) "
+                      "gives {gain_or_loss} of £{profit:.2f}".format(
                     id=self.total_number_of_disposals,
                     amount=amount,
                     asset=asset,
@@ -219,7 +219,7 @@ class CapitalGainCalculator:
                     profit=abs(profit),
                 ))
                 print("Matches with:\n"
-                      "BUY: {amount} {asset} shares bought on {dt} at £{price:0.4f} (including fees) according to {rule} rule\n\n".format(
+                      "BUY: {amount} {asset} shares bought on {dt} at £{price:.4f} (including fees) according to {rule} rule\n\n".format(
                     asset=asset,
                     amount=amount,
                     dt=matchDate.strftime("%d/%m/%Y"),
@@ -290,8 +290,8 @@ class CapitalGainCalculator:
                     if reportable:
                         self.total_number_of_disposals += 1
                         profit = tx.disposeVal - cost
-                        print("{id}. SELL: {amount} {asset} on {dt} at £{price:.04f} (including fees) "
-                              "gives {gain_or_loss} of £{profit:.02f}".format(
+                        print("{id}. SELL: {amount} {asset} on {dt} at £{price:.4f} (including fees) "
+                              "gives {gain_or_loss} of £{profit:.2f}".format(
                             id=self.total_number_of_disposals,
                             amount=tx.disposeAmt,
                             asset=asset,
@@ -301,7 +301,7 @@ class CapitalGainCalculator:
                             profit=abs(profit),
                         ))
                         print("Matches with:\nBUY: SECTION 104 HOLDING. {amount} {asset} shares of {total_amount} "
-                              "bought at average price of £{average_price:.04f} (including fees)\n\n".format(
+                              "bought at average price of £{average_price:.4f} (including fees)\n\n".format(
                             asset=asset,
                             amount=tx.disposeAmt,
                             total_amount=total_amount,
