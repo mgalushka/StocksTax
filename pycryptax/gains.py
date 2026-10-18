@@ -34,32 +34,6 @@ class AssetPool:
     def __repr__(self):
         return "AssetPool({}, {})".format(self.totalQuantity, self.totalCost)
 
-class AggregateDayTxs:
-
-    def __init__(self):
-
-        self.acquireAmt = 0
-        self.acquireVal = 0
-
-        self.disposeAmt = 0
-        self.disposeVal = 0
-
-    def acquire(self, amt, val):
-        self.acquireAmt += amt
-        self.acquireVal += val
-
-    def dispose(self, amt, val):
-        self.disposeAmt += amt
-        self.disposeVal += val
-
-    def __repr__(self):
-        return 'acquireAmt={}, acquireVal={}; disposeAmt={}, disposeVal={}'.format(
-            self.acquireAmt,
-            self.acquireVal,
-            self.disposeAmt,
-            self.disposeVal,
-        )
-
 class Gain:
 
     def __init__(self, cost: Decimal = Decimal(0), value: Decimal = Decimal(0)):
@@ -87,6 +61,36 @@ class Rule(Enum):
     SAME_DAY = "SAME DAY"
     BED_AND_BREAKFASTING = "BED AND BREAKFASTING"
 
+class _Acquisition:
+
+    def __init__(self, date, amount, cost):
+        self.date = date
+        self.remaining = amount
+        self.remaining_cost = cost
+
+class _Disposal:
+
+    def __init__(self, date, amount, value, index):
+        self.date = date
+        self.amount = amount
+        self.value = value
+        self.index = index
+        self.remaining = amount
+        self.remaining_value = value
+        self.matches = []
+
+class _Match:
+
+    def __init__(self, amount, cost, rule=None, match_date=None, price=None,
+                 total_amount=None, average_price=None):
+        self.amount = amount
+        self.cost = cost
+        self.rule = rule
+        self.match_date = match_date
+        self.price = price
+        self.total_amount = total_amount
+        self.average_price = average_price
+
 class CapitalGainCalculator:
 
     def __init__(
@@ -110,208 +114,249 @@ class CapitalGainCalculator:
 
         self.total_number_of_disposals = 0
 
-        # Obtain total acquisition and disposal values for each day for every
-        # asset
-
+        # Group the individual transactions by asset, keeping them in date
+        # order (the CSV data is iterated in date order already).
         assetTxs = {}
 
-        def getDayTxForAsset(asset, date):
-
-            if asset not in assetTxs:
-                assetTxs[asset] = datemap.DateMap()
-
-            dayTxs = assetTxs[asset]
-
-            if date not in dayTxs:
-                return dayTxs.insert(date, AggregateDayTxs())
-
-            return dayTxs[date]
-
         for date, tx in gainData:
+            assetTxs.setdefault(tx.asset, []).append((date, tx))
+
+        for asset, txs in assetTxs.items():
+            disposals = self._matchAsset(asset, txs)
+            self._reportAsset(asset, disposals)
+
+    def _applyGain(self, asset, gain, date):
+
+        logging.debug('Applying gain={} to asset={}, for date={}'.format(gain, asset, date))
+
+        if date < self._start or date > self._end:
+            return False
+
+        if self._includeSummary:
+            self._totalGain += gain
+            util.addToDictKey(self._assetGain, asset, gain)
+
+        if self._includeDisposals:
+            self._disposals.insert(date, (asset, gain))
+
+        return True
+
+    @staticmethod
+    def _gainOrLoss(profit):
+        if profit >= Decimal(0.01):
+            return "GAIN"
+        elif profit <= Decimal(-0.01):
+            return "LOSS"
+        else:
+            return "neither GAIN nor LOSS"
+
+    def _matchAsset(self, asset, txs):
+
+        acquisitions = []
+        disposals = []
+
+        # Same-day acquisitions of the same class are treated as a single
+        # asset, so aggregate them. Disposals are kept individual so that each
+        # sell transaction is reported separately.
+        acquisitions_by_date = {}
+
+        for index, (date, tx) in enumerate(txs):
+
             if tx.amount > 0:
-                # Acquisition
+                # Acquisition: cost is the amount paid plus the fee.
+                cost = tx.amount * tx.price + tx.fee
 
-                getDayTxForAsset(tx.asset, date).acquire(
-                    tx.amount,
-                    tx.amount * tx.price + tx.fee
-                )
+                if date in acquisitions_by_date:
+                    acquisitions_by_date[date].remaining += tx.amount
+                    acquisitions_by_date[date].remaining_cost += cost
+                else:
+                    acquisition = _Acquisition(date, tx.amount, cost)
+                    acquisitions_by_date[date] = acquisition
+                    acquisitions.append(acquisition)
 
-            if tx.amount < 0:
-                # Disposal
-
+            elif tx.amount < 0:
+                # Disposal: value is the proceeds less the fee.
                 amount = abs(tx.amount)
-                getDayTxForAsset(tx.asset, date).dispose(
+                disposals.append(_Disposal(
+                    date,
                     amount,
-                    amount * tx.price - tx.fee
-                )
-
-        def applyGain(asset, gain, date):
-
-            logging.debug('Applying gain={} to asset={}, for date={}'.format(gain, asset, date))
-
-            if date < start or date > end:
-                return False
-
-            if self._includeSummary:
-                self._totalGain += gain
-                util.addToDictKey(self._assetGain, asset, gain)
-
-            if self._includeDisposals:
-                self._disposals.insert(date, (asset, gain))
-
-            return True
-
-        def gainOrLoss(profit):
-            if profit >= Decimal(0.01):
-                return "GAIN"
-            elif profit <= Decimal(-0.01):
-                return "LOSS"
-            else:
-                return "neither GAIN nor LOSS"
-
-        def match(
-                asset: str,
-                date: datetime.datetime,
-                matchDate: datetime.datetime,
-                disposeTx: AggregateDayTxs,
-                acquireTx: AggregateDayTxs,
-                rule: Rule,
-        ):
-
-            # Get amount that can be matched
-            amount = min(disposeTx.disposeAmt, acquireTx.acquireAmt)
-
-            if amount == 0:
-                # Cannot match nothing
-                return
-
-            # Get proportion of cost
-            cost = Decimal(acquireTx.acquireVal * amount / acquireTx.acquireAmt)
-
-            # Get proportion of disposal value
-            value = Decimal(disposeTx.disposeVal * amount / disposeTx.disposeAmt)
-
-            # Apply gain/loss
-            reportable = applyGain(asset, Gain(cost, value), date)
-
-            # Adjust data to remove amounts and report asset values that have
-            # been accounted for
-
-            disposeValue = disposeTx.disposeVal
-
-            disposeTx.disposeAmt -= amount
-            acquireTx.acquireAmt -= amount
-
-            disposeTx.disposeVal -= value
-            acquireTx.acquireVal -= cost
-
-            if reportable:
-                self.total_number_of_disposals += 1
-                profit = value - cost
-                print("{id}. SELL: {amount} {asset} on {dt} at £{disposePrice:.4f} (including fees) "
-                      "gives {gain_or_loss} of £{profit:.2f}".format(
-                    id=self.total_number_of_disposals,
-                    amount=amount,
-                    asset=asset,
-                    dt=date.strftime("%d/%m/%Y"),
-                    gain_or_loss=gainOrLoss(profit),
-                    disposePrice=value / amount,
-                    profit=abs(profit),
-                ))
-                print("Matches with:\n"
-                      "BUY: {amount} {asset} shares bought on {dt} at £{price:.4f} (including fees) according to {rule} rule\n\n".format(
-                    asset=asset,
-                    amount=amount,
-                    dt=matchDate.strftime("%d/%m/%Y"),
-                    price=cost / amount,
-                    rule=rule.value,
+                    amount * tx.price - tx.fee,
+                    index,
                 ))
 
-        for asset, dayTxs in assetTxs.items():
+        # Apply the HMRC share matching rules in the required order: same-day
+        # first, then bed and breakfasting (acquisitions within 30 days), then
+        # the Section 104 holding.
+        self._matchSameDay(acquisitions, disposals)
+        self._matchBedAndBreakfasting(acquisitions, disposals)
+        self._matchSection104(asset, acquisitions, disposals)
 
-            # Same-day rule: Match disposals to acquisitions that happen on the same day
+        return disposals
 
-            for date, tx in dayTxs:
-                match(asset, date, date, tx, tx, Rule.SAME_DAY)
+    def _matchPair(self, disposal, acquisition, rule):
 
-            # Bed and breakfasting rule
-            # Match disposals to nearest acquisitions from 1->30 days afterwards
+        if disposal.remaining == 0 or acquisition.remaining == 0:
+            return
 
-            for date, tx in dayTxs:
+        amount = min(disposal.remaining, acquisition.remaining)
 
-                # Only process disposals
-                if tx.disposeAmt == 0:
+        cost = acquisition.remaining_cost * amount / acquisition.remaining
+        value = disposal.remaining_value * amount / disposal.remaining
+
+        disposal.matches.append(_Match(
+            amount,
+            cost,
+            rule=rule,
+            match_date=acquisition.date,
+            price=cost / amount,
+        ))
+
+        acquisition.remaining -= amount
+        acquisition.remaining_cost -= cost
+
+        disposal.remaining -= amount
+        disposal.remaining_value -= value
+
+    def _matchSameDay(self, acquisitions, disposals):
+
+        acquisitions_by_date = {}
+
+        for acquisition in acquisitions:
+            acquisitions_by_date.setdefault(acquisition.date, []).append(acquisition)
+
+        for disposal in disposals:
+            for acquisition in acquisitions_by_date.get(disposal.date, ()):
+
+                if disposal.remaining == 0:
+                    break
+
+                self._matchPair(disposal, acquisition, Rule.SAME_DAY)
+
+    def _matchBedAndBreakfasting(self, acquisitions, disposals):
+
+        for disposal in disposals:
+
+            if disposal.remaining == 0:
+                continue
+
+            for acquisition in acquisitions:
+
+                if acquisition.remaining == 0:
                     continue
 
-                # Loop though transactions in range to match against
-                for matchDate, matchTx in dayTxs.range(
-                    date + datetime.timedelta(days=1),
-                    date + datetime.timedelta(days=30)
-                ):
-                    match(asset, date, matchDate, tx, matchTx, Rule.BED_AND_BREAKFASTING)
+                if disposal.date < acquisition.date <= \
+                        disposal.date + datetime.timedelta(days=30):
+                    self._matchPair(disposal, acquisition, Rule.BED_AND_BREAKFASTING)
 
-            # Process section 104 holdings from very beginning but only count gains
-            # realised between start and end.
+                    if disposal.remaining == 0:
+                        break
 
-            for date, tx in dayTxs:
+    def _matchSection104(self, asset, acquisitions, disposals):
 
-                # Only an acquisition or disposal, not both allowed.
-                # Should have been previously matched
-                assert(not (tx.acquireAmt != 0 and tx.disposeAmt != 0))
+        if asset not in self._assetPools:
+            self._assetPools[asset] = AssetPool()
 
-                if tx.acquireAmt != 0:
+        pool = self._assetPools[asset]
 
-                    # Adjust section 104 holding
+        # Process the remaining acquisitions and disposals in date order,
+        # adding acquisitions to the Section 104 holding and removing
+        # disposals from it. After same-day and bed and breakfasting matching
+        # a single date never has both a remaining acquisition and a remaining
+        # disposal.
+        events = [(a.date, a) for a in acquisitions if a.remaining > 0] + \
+                 [(d.date, d) for d in disposals if d.remaining > 0]
 
-                    if asset not in self._assetPools:
-                        self._assetPools[asset] = AssetPool()
+        events.sort(key=lambda event: event[0])
 
-                    self._assetPools[asset].add(tx.acquireAmt, tx.acquireVal)
+        for date, event in events:
 
-                if tx.disposeAmt != 0:
+            if isinstance(event, _Acquisition):
 
-                    if asset not in self._assetPools:
-                        raise ValueError("Disposing of an asset ({}) not acquired: {}".format(asset, tx))
+                pool.add(event.remaining, event.remaining_cost)
 
-                    average_price = 0
+            else:
 
-                    # Adjust section 104 holding and get cost
-                    try:
-                        total_cost = self._assetPools[asset].totalCost
-                        total_amount = self._assetPools[asset].totalQuantity
-                        average_price = total_cost / total_amount
-                        cost = self._assetPools[asset].dispose(tx.disposeAmt)
-                    except ValueError as e:
-                        print(util.getPrettyDate(date) + " (" + asset + "): " + str(e))
-                        raise e
+                total_amount = pool.totalQuantity
+                total_cost = pool.totalCost
+                average_price = total_cost / total_amount if total_amount else Decimal(0)
 
-                    # Apply gain/loss
-                    reportable = applyGain(asset, Gain(cost, tx.disposeVal), date)
-                    if reportable:
-                        self.total_number_of_disposals += 1
-                        profit = tx.disposeVal - cost
-                        print("{id}. SELL: {amount} {asset} on {dt} at £{price:.4f} (including fees) "
-                              "gives {gain_or_loss} of £{profit:.2f}".format(
-                            id=self.total_number_of_disposals,
-                            amount=tx.disposeAmt,
+                try:
+                    cost = pool.dispose(event.remaining)
+                except ValueError as e:
+                    print(util.getPrettyDate(date) + " (" + asset + "): " + str(e))
+                    raise e
+
+                event.matches.append(_Match(
+                    event.remaining,
+                    cost,
+                    total_amount=total_amount,
+                    average_price=average_price,
+                ))
+                event.remaining = 0
+
+            if date <= self._end:
+                # Update asset pools up until the end of the range to get the
+                # section 104 holdings at the point of the end of the range
+                self._assetPoolsAtEnd[asset] = copy.deepcopy(pool)
+
+    def _reportAsset(self, asset, disposals):
+
+        for disposal in sorted(disposals, key=lambda d: (d.date, d.index)):
+
+            cost = sum((m.cost for m in disposal.matches), Decimal(0))
+
+            reportable = self._applyGain(
+                asset, Gain(cost, disposal.value), disposal.date
+            )
+
+            if not reportable:
+                continue
+
+            self.total_number_of_disposals += 1
+            profit = disposal.value - cost
+
+            print("{id}. SELL: {amount} {asset} on {dt} at £{price:.4f} (including fees) "
+                  "gives {gain_or_loss} of £{profit:.2f}".format(
+                id=self.total_number_of_disposals,
+                amount=disposal.amount,
+                asset=asset,
+                dt=disposal.date.strftime("%d/%m/%Y"),
+                gain_or_loss=self._gainOrLoss(profit),
+                price=disposal.value / disposal.amount,
+                profit=abs(profit),
+            ))
+
+            match_lines = []
+
+            for m in disposal.matches:
+                if m.rule is not None:
+                    match_lines.append(
+                        "BUY: {amount} {asset} shares bought on {dt} at £{price:.4f} "
+                        "(including fees) according to {rule} rule".format(
+                            amount=m.amount,
                             asset=asset,
-                            dt=date.strftime("%d/%m/%Y"),
-                            gain_or_loss=gainOrLoss(profit),
-                            price=tx.disposeVal / tx.disposeAmt,
-                            profit=abs(profit),
-                        ))
-                        print("Matches with:\nBUY: SECTION 104 HOLDING. {amount} {asset} shares of {total_amount} "
-                              "bought at average price of £{average_price:.4f} (including fees)\n\n".format(
+                            dt=m.match_date.strftime("%d/%m/%Y"),
+                            price=m.price,
+                            rule=m.rule.value,
+                        )
+                    )
+                else:
+                    match_lines.append(
+                        "BUY: SECTION 104 HOLDING. {amount} {asset} shares of "
+                        "{total_amount} bought at average price of £{average_price:.4f} "
+                        "(including fees)".format(
+                            amount=m.amount,
                             asset=asset,
-                            amount=tx.disposeAmt,
-                            total_amount=total_amount,
-                            average_price=average_price,
-                        ))
+                            total_amount=m.total_amount,
+                            average_price=m.average_price,
+                        )
+                    )
 
-                if date <= end:
-                    # Update asset pools up until the end of the range to get the
-                    # section 104 holdings at the point of the end of the range
-                    self._assetPoolsAtEnd[asset] = copy.deepcopy(self._assetPools[asset])
+            if match_lines:
+                print("Matches with:")
+                for line in match_lines:
+                    print(line)
+                print()
 
     def printSummary(self):
 
